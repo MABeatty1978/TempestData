@@ -8,7 +8,7 @@
                 <MenuItem Header="E_xit" Click="ExitMenuItem_Click" />
             </MenuItem>
             <MenuItem Header="_Station">
-                <MenuItem Header="_Refresh Station" Click="RefreshStationsButton_Click" />
+                <MenuItem Header="_Refresh Station List" Click="RefreshStationsButton_Click" />
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="API Token Help" Click="ApiKeyHelpMenuItem_Click" />
@@ -60,7 +60,7 @@
 
                     <TextBlock Text="Tempest API Token:" VerticalAlignment="Center" HorizontalAlignment="Right" TextAlignment="Right" />
                     <Grid Grid.Column="1" Margin="4,0,0,8" Width="260" HorizontalAlignment="Left">
-                        <TextBox x:Name="ApiKeyBox" Width="260" HorizontalAlignment="Left" VerticalContentAlignment="Center" />
+                        <TextBox x:Name="ApiKeyBox" Width="260" HorizontalAlignment="Left" VerticalContentAlignment="Center" TextChanged="ApiKeyBox_TextChanged" LostFocus="ApiKeyBox_LostFocus" />
                         <TextBlock Text='See "Help" to get token' Margin="8,0,0,0" VerticalAlignment="Center" Foreground="#8A8A8A" IsHitTestVisible="False">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
@@ -78,7 +78,9 @@
                     <TextBlock Text="Station:" Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Right" TextAlignment="Right" />
                     <ComboBox x:Name="StationComboBox" Grid.Row="1" Grid.Column="1" Margin="4,0,0,0" Width="260" MaxWidth="260" HorizontalAlignment="Left" SelectionChanged="StationComboBox_SelectionChanged" />
                     <Button x:Name="SaveSettingsButton" Grid.Row="0" Grid.Column="2" Margin="10,0,0,8" Width="120" Padding="10,4" HorizontalAlignment="Right" Content="Save Settings" Click="SaveSettingsButton_Click" />
-                    <Button x:Name="KoFiButton" Grid.Row="1" Grid.Column="2" Margin="10,0,0,0" Width="120" Padding="10,4" HorizontalAlignment="Right" Content="Tip on Ko-fi" Click="KoFiButton_Click" />
+                    <Button x:Name="LoadStationsButton" Grid.Row="1" Grid.Column="2" Margin="10,0,0,0" Width="120" Padding="10,4" HorizontalAlignment="Right" Content="Load Stations" Click="RefreshStationsButton_Click" />
+                    <TextBlock x:Name="StationHelperText" Grid.Row="2" Grid.Column="1" Margin="4,6,0,0" Foreground="#666666" Text="Enter your Tempest API token, then click Load Stations." />
+                    <Button x:Name="KoFiButton" Grid.Row="2" Grid.Column="2" Margin="10,4,0,0" Width="120" Padding="10,4" HorizontalAlignment="Right" Content="Tip on Ko-fi" Click="KoFiButton_Click" />
                 </Grid>
             </GroupBox>
 

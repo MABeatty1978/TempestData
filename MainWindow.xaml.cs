@@ -36,6 +36,7 @@ namespace TempestData
         private bool _isFieldSelectionUpdating;
         private bool _isBusy;
         private bool _isCheckingUpdates;
+        private string _lastDiscoveredApiKey = string.Empty;
         private HashSet<string> _standardSelectedFields = new(StringComparer.OrdinalIgnoreCase);
         private ContextMenu? _exportContextMenu;
 
@@ -84,6 +85,7 @@ namespace TempestData
             finally
             {
                 _isInitializing = false;
+                UpdateStationUiHints();
                 UpdateExportButtonState();
             }
         }
@@ -410,6 +412,7 @@ namespace TempestData
         private async void SaveSettingsButton_Click(object sender, RoutedEventArgs e)
         {
             await SaveSettingsAsync().ConfigureAwait(false);
+            await TryAutoDiscoverStationsAsync("Settings saved. Discovering stations...").ConfigureAwait(false);
         }
 
         private async void LoadButton_Click(object sender, RoutedEventArgs e)
@@ -492,6 +495,8 @@ namespace TempestData
 
         private async void StationComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            UpdateStationUiHints();
+
             if (_isInitializing)
             {
                 return;
@@ -513,6 +518,40 @@ namespace TempestData
             }
 
             await SaveSettingsAsync().ConfigureAwait(false);
+        }
+
+        private void ApiKeyBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            UpdateStationUiHints();
+        }
+
+        private async void ApiKeyBox_LostFocus(object sender, RoutedEventArgs e)
+        {
+            await TryAutoDiscoverStationsAsync("Token detected. Discovering stations...").ConfigureAwait(false);
+        }
+
+        private async Task TryAutoDiscoverStationsAsync(string statusMessage)
+        {
+            if (_isInitializing || _isBusy)
+            {
+                return;
+            }
+
+            var apiKey = ApiKeyBox.Text.Trim();
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                return;
+            }
+
+            var stationCount = (StationComboBox.ItemsSource as IList<TempestStation>)?.Count ?? 0;
+            var tokenChangedSinceLastDiscovery = !string.Equals(apiKey, _lastDiscoveredApiKey, StringComparison.Ordinal);
+            if (!tokenChangedSinceLastDiscovery && stationCount > 0)
+            {
+                return;
+            }
+
+            SetStatus(statusMessage);
+            await LoadStationsAsync().ConfigureAwait(false);
         }
 
         private async void BucketComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -642,11 +681,12 @@ namespace TempestData
             MessageBox.Show(
                 this,
                 "To create a Tempest API token:\n\n" +
-                "1. Go to https://tempestwx.com/.\n" +
-                "2. Log in.\n" +
-                "3. Click on Settings.\n" +
-                "4. Scroll down to Data Authorizations.\n" +
-                "5. Click Create Token.",
+                "1. Navigate to https://tempestwx.com/settings/tokens.\n" +
+                "2. Log in to your Tempest account.\n" +
+                "3. Click Create Token.\n" +
+                "4. Copy the generated token.\n" +
+                "5. Paste it into the token field.\n" +
+                "6. Click Load Stations.",
                 "API Key Help",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
@@ -655,7 +695,7 @@ namespace TempestData
         private void HelpAboutMenuItem_Click(object sender, RoutedEventArgs e)
         {
             var version = GetCurrentAppVersion();
-            MessageBox.Show(this, $"Tempest Weather Station Viewer\nVersion: {version}\n\nUse File > Exit to close the app.\nUse Station > Refresh Station to reload your station list.", "About", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(this, $"Tempest Weather Station Viewer\nVersion: {version}\n\nUse File > Exit to close the app.\nUse Load Stations in Connection & Station to discover your station list.", "About", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
         private async void CheckUpdatesMenuItem_Click(object sender, RoutedEventArgs e)
@@ -742,8 +782,22 @@ namespace TempestData
             try
             {
                 SetBusy(true, "Discovering stations...");
-                var apiKey = _settings.ApiKey?.Trim() ?? string.Empty;
+                var apiKey = string.Empty;
+                await Dispatcher.InvokeAsync(() => apiKey = ApiKeyBox.Text.Trim());
+                if (string.IsNullOrWhiteSpace(apiKey))
+                {
+                    apiKey = _settings.ApiKey?.Trim() ?? string.Empty;
+                }
+
+                if (string.IsNullOrWhiteSpace(apiKey))
+                {
+                    SetStatus("Enter your Tempest API token, then click Load Stations.");
+                    return;
+                }
+
+                _settings.ApiKey = apiKey;
                 var stations = await _apiClient.GetStationsAsync(apiKey).ConfigureAwait(false);
+                _lastDiscoveredApiKey = apiKey;
                 await Dispatcher.InvokeAsync(() =>
                 {
                     StationComboBox.ItemsSource = stations;
@@ -775,6 +829,8 @@ namespace TempestData
                     {
                         SetStatus("No stations found for that API token.");
                     }
+
+                    UpdateStationUiHints();
                 });
             }
             catch (Exception ex)
@@ -819,7 +875,7 @@ namespace TempestData
                     var count = (StationComboBox.ItemsSource as IList<TempestStation>)?.Count ?? 0;
                     SetStatus(count > 0
                         ? "A station is listed but it has no station ID. Refresh stations again or select another station."
-                        : "No station is selected. Refresh stations to populate the list first.");
+                        : "No station is selected. Click Load Stations to populate the list first.");
                     return;
                 }
 
@@ -838,17 +894,14 @@ namespace TempestData
 
                 if (TryBuildBucketRangeWarning(selectedBucket, startDate, endDate, out var rangeWarning))
                 {
-                    var proceed = MessageBox.Show(
+                    MessageBox.Show(
                         this,
                         rangeWarning,
                         "Requested Range Warning",
-                        MessageBoxButton.YesNo,
+                        MessageBoxButton.OK,
                         MessageBoxImage.Warning);
-                    if (proceed != MessageBoxResult.Yes)
-                    {
-                        SetStatus("Load cancelled by user.");
-                        return;
-                    }
+                    SetStatus("Requested range exceeds API limits. Adjust the selected range and try again.");
+                    return;
                 }
 
                 SetBusy(true, "Loading observations...");
@@ -1270,7 +1323,7 @@ namespace TempestData
             warningMessage =
                 $"The selected resolution ({label}) supports a maximum range of {maxRangeDays.Value} day(s).\n\n" +
                 $"Requested range: {requestedSpan.TotalDays:F1} day(s).\n\n" +
-                "The API may reject or adjust this request. Continue anyway?";
+                "This range is not allowed. Adjust the resolution or shorten the selected time window, then try again.";
 
             return true;
         }
@@ -1420,14 +1473,46 @@ namespace TempestData
             _isBusy = isBusy;
             Dispatcher.Invoke(() =>
             {
-                LoadButton.IsEnabled = !isBusy;
                 SaveSettingsButton.IsEnabled = !isBusy;
                 if (message != null)
                 {
                     StatusTextBlock.Text = message;
                 }
 
+                UpdateStationUiHints();
                 UpdateExportButtonState();
+            });
+        }
+
+        private void UpdateStationUiHints()
+        {
+            Dispatcher.Invoke(() =>
+            {
+                var apiKey = ApiKeyBox.Text.Trim();
+                var hasApiKey = !string.IsNullOrWhiteSpace(apiKey);
+                var stations = StationComboBox.ItemsSource as IList<TempestStation>;
+                var stationCount = stations?.Count ?? 0;
+                var hasStation = StationComboBox.SelectedItem is TempestStation || !string.IsNullOrWhiteSpace(StationComboBox.SelectedValue?.ToString());
+
+                LoadStationsButton.IsEnabled = !_isBusy && hasApiKey;
+                LoadButton.IsEnabled = !_isBusy && hasApiKey && hasStation;
+
+                if (!hasApiKey)
+                {
+                    StationHelperText.Text = "Enter your Tempest API token, then click Load Stations.";
+                }
+                else if (stationCount == 0)
+                {
+                    StationHelperText.Text = "No stations loaded yet. Click Load Stations.";
+                }
+                else if (!hasStation)
+                {
+                    StationHelperText.Text = "Select a station, then click Load Observations.";
+                }
+                else
+                {
+                    StationHelperText.Text = string.Empty;
+                }
             });
         }
 
