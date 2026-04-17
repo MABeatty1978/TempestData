@@ -36,9 +36,7 @@ namespace TempestData
         private bool _isFieldSelectionUpdating;
         private bool _isBusy;
         private bool _isCheckingUpdates;
-        private bool _isDailyFieldMode;
         private HashSet<string> _standardSelectedFields = new(StringComparer.OrdinalIgnoreCase);
-        private HashSet<string> _dailySelectedFields = new(StringComparer.OrdinalIgnoreCase);
         private ContextMenu? _exportContextMenu;
 
         public MainWindow()
@@ -97,8 +95,7 @@ namespace TempestData
                 new("1", "1 minute"),
                 new("5", "5 minutes"),
                 new("30", "30 minutes"),
-                new("180", "180 minutes"),
-                new("1440", "1 day")
+                new("180", "180 minutes")
             };
             BucketComboBox.DisplayMemberPath = "Value";
             BucketComboBox.SelectedValuePath = "Key";
@@ -167,22 +164,12 @@ namespace TempestData
 
         private void RebuildFieldListForSelectedBucket()
         {
-            var isDailyBucket = string.Equals(NormalizeBucketValue(BucketComboBox.SelectedValue?.ToString()), "1440", StringComparison.OrdinalIgnoreCase);
-
             if (_fields.Count > 0)
             {
-                var currentSelected = GetSelectedRealFieldNames();
-                if (_isDailyFieldMode)
-                {
-                    _dailySelectedFields = currentSelected;
-                }
-                else
-                {
-                    _standardSelectedFields = currentSelected;
-                }
+                _standardSelectedFields = GetSelectedRealFieldNames();
             }
 
-            var knownFields = isDailyBucket ? BuildDailyKnownFields() : BuildStandardKnownFields();
+            var knownFields = BuildStandardKnownFields();
 
             _fields.Clear();
             _fields.AddRange(knownFields);
@@ -206,7 +193,7 @@ namespace TempestData
             _fields.Add(allField);
             _fields.Add(noneField);
 
-            var preferred = isDailyBucket ? _dailySelectedFields : _standardSelectedFields;
+            var preferred = _standardSelectedFields;
             foreach (var field in _fields)
             {
                 if (string.Equals(field.Name, AllFieldName, StringComparison.OrdinalIgnoreCase) ||
@@ -220,7 +207,6 @@ namespace TempestData
                 field.IsSelected = preferred.Count == 0 || preferred.Contains(field.Name);
             }
 
-            _isDailyFieldMode = isDailyBucket;
             SyncControlFieldStates();
             FieldCheckList.ItemsSource = _fields;
             FieldCheckList.Items.Refresh();
@@ -250,47 +236,6 @@ namespace TempestData
                 new() { Name = "nc_precip_accumulation", DisplayName = "Nearcast Precip Accumulation" },
                     new() { Name = "local_day_precip_accumulation", DisplayName = "Local Day Precip Accumulation" },
                     new() { Name = "nc_local_day_precip_accumulation", DisplayName = "Local Day Nearcast Precip Accumulation" }
-            };
-        }
-
-        private static List<ObservationField> BuildDailyKnownFields()
-        {
-            return new List<ObservationField>
-            {
-                new() { Name = "timestamp", DisplayName = "Timestamp" },
-                new() { Name = "average_pressure", DisplayName = "Average Pressure" },
-                new() { Name = "highest_pressure", DisplayName = "Highest Pressure" },
-                new() { Name = "lowest_pressure", DisplayName = "Lowest Pressure" },
-                new() { Name = "average_temperature", DisplayName = "Average Temperature" },
-                new() { Name = "highest_temperature", DisplayName = "Highest Temperature" },
-                new() { Name = "lowest_temperature", DisplayName = "Lowest Temperature" },
-                new() { Name = "average_humidity", DisplayName = "Average Humidity" },
-                new() { Name = "highest_humidity", DisplayName = "Highest Humidity" },
-                new() { Name = "lowest_humidity", DisplayName = "Lowest Humidity" },
-                new() { Name = "average_illuminance", DisplayName = "Average Illuminance" },
-                new() { Name = "highest_illuminance", DisplayName = "Highest Illuminance" },
-                new() { Name = "lowest_illuminance", DisplayName = "Lowest Illuminance" },
-                new() { Name = "average_uv", DisplayName = "Average UV" },
-                new() { Name = "highest_uv", DisplayName = "Highest UV" },
-                new() { Name = "lowest_uv", DisplayName = "Lowest UV" },
-                new() { Name = "average_solar_radiation", DisplayName = "Average Solar Radiation" },
-                new() { Name = "highest_solar_radiation", DisplayName = "Highest Solar Radiation" },
-                new() { Name = "lowest_solar_radiation", DisplayName = "Lowest Solar Radiation" },
-                new() { Name = "average_wind_speed", DisplayName = "Average Wind Speed" },
-                new() { Name = "wind_gust", DisplayName = "Wind Gust" },
-                new() { Name = "wind_lull", DisplayName = "Wind Lull" },
-                new() { Name = "average_wind_direction", DisplayName = "Average Wind Direction" },
-                new() { Name = "wind_sample_interval", DisplayName = "Wind Sample Interval" },
-                new() { Name = "strike_count", DisplayName = "Strike Count" },
-                new() { Name = "average_strike_distance", DisplayName = "Average Strike Distance" },
-                new() { Name = "record_count", DisplayName = "Record Count" },
-                new() { Name = "battery", DisplayName = "Battery" },
-                new() { Name = "local_day_rain_accumulation", DisplayName = "Local Day Rain Accumulation" },
-                new() { Name = "local_day_nearcast_rain_accumulation", DisplayName = "Local Day Nearcast Rain Accumulation" },
-                new() { Name = "local_day_precipitation_minutes", DisplayName = "Local Day Precipitation Minutes" },
-                new() { Name = "local_day_nearcast_precipitation_minutes", DisplayName = "Local Day Nearcast Precipitation Minutes" },
-                new() { Name = "precipitation_type", DisplayName = "Precipitation Type" },
-                new() { Name = "precipitation_analysis_type", DisplayName = "Precipitation Analysis Type" }
             };
         }
 
@@ -347,15 +292,7 @@ namespace TempestData
                     }
                     UpdateTimeZoneLabels();
 
-                    var normalizedBucket = NormalizeBucketValue(_settings.Bucket);
-                    if (string.Equals(normalizedBucket, "1440", StringComparison.OrdinalIgnoreCase))
-                    {
-                        _dailySelectedFields = _settings.SelectedFields.ToHashSet(StringComparer.OrdinalIgnoreCase);
-                    }
-                    else
-                    {
-                        _standardSelectedFields = _settings.SelectedFields.ToHashSet(StringComparer.OrdinalIgnoreCase);
-                    }
+                    _standardSelectedFields = _settings.SelectedFields.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
                     RebuildFieldListForSelectedBucket();
                 });
@@ -1250,12 +1187,10 @@ namespace TempestData
                 "b" => "5",
                 "c" => "30",
                 "d" => "180",
-                "e" => "1440",
                 "1" => "1",
                 "5" => "5",
                 "30" => "30",
                 "180" => "180",
-                "1440" => "1440",
                 _ => "1"
             };
         }
@@ -1287,11 +1222,6 @@ namespace TempestData
                     stepMinutes = 180;
                     maxRangeDays = 180;
                     label = "180 minutes";
-                    return true;
-                case "1440":
-                    stepMinutes = 1440;
-                    maxRangeDays = null;
-                    label = "1 day";
                     return true;
                 default:
                     return false;

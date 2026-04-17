@@ -37,44 +37,6 @@ namespace TempestData.Services
             "nc_local_day_precip_accumulation"        // 19
         };
 
-        private static readonly string[] DailyBucketObservationFieldOrder =
-        {
-            "timestamp",                              // 0
-            "average_pressure",                       // 1
-            "highest_pressure",                       // 2
-            "lowest_pressure",                        // 3
-            "average_temperature",                    // 4
-            "highest_temperature",                    // 5
-            "lowest_temperature",                     // 6
-            "average_humidity",                       // 7
-            "highest_humidity",                       // 8
-            "lowest_humidity",                        // 9
-            "average_illuminance",                    // 10
-            "highest_illuminance",                    // 11
-            "lowest_illuminance",                     // 12
-            "average_uv",                             // 13
-            "highest_uv",                             // 14
-            "lowest_uv",                              // 15
-            "average_solar_radiation",                // 16
-            "highest_solar_radiation",                // 17
-            "lowest_solar_radiation",                 // 18
-            "average_wind_speed",                     // 19
-            "wind_gust",                              // 20
-            "wind_lull",                              // 21
-            "average_wind_direction",                 // 22
-            "wind_sample_interval",                   // 23
-            "strike_count",                           // 24
-            "average_strike_distance",                // 25
-            "record_count",                           // 26
-            "battery",                                // 27
-            "local_day_rain_accumulation",            // 28
-            "local_day_nearcast_rain_accumulation",   // 29
-            "local_day_precipitation_minutes",        // 30
-            "local_day_nearcast_precipitation_minutes",// 31
-            "precipitation_type",                     // 32
-            "precipitation_analysis_type"             // 33
-        };
-
         public TempestApiClient(HttpClient httpClient)
         {
             _httpClient = httpClient;
@@ -194,25 +156,27 @@ namespace TempestData.Services
                 Query = string.Join("&", query)
             };
 
+            // DEBUG: Log request before sending so it appears even when the API returns an error
+            System.Diagnostics.Debug.WriteLine($"\n=== API Request ===");
+            System.Diagnostics.Debug.WriteLine($"URL: {builder.Uri}");
+            System.Diagnostics.Debug.WriteLine($"obsFields parameter: {obsFields ?? "(empty)"}");
+
             using var response = await _httpClient.GetAsync(builder.Uri).ConfigureAwait(false);
             var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+            System.Diagnostics.Debug.WriteLine($"\n=== API Response ===");
+            System.Diagnostics.Debug.WriteLine($"Body: {body}");
+
             if (!response.IsSuccessStatusCode)
             {
                 throw new HttpRequestException($"Response status code does not indicate success: {(int)response.StatusCode} ({response.ReasonPhrase}). Body: {body}");
             }
 
-            // DEBUG: Log request and response details
-            System.Diagnostics.Debug.WriteLine($"\n=== API Request ===");
-            System.Diagnostics.Debug.WriteLine($"URL: {builder.Uri}");
-            System.Diagnostics.Debug.WriteLine($"obsFields parameter: {obsFields ?? "(empty)"}");
-            System.Diagnostics.Debug.WriteLine($"\n=== API Response ===");
-            System.Diagnostics.Debug.WriteLine($"Body: {body}");
-
             using var document = JsonDocument.Parse(body);
             var fieldList = string.IsNullOrWhiteSpace(obsFields) ? new List<string>() : obsFields.Split(',').Select(f => f.Trim()).ToList();
             System.Diagnostics.Debug.WriteLine($"\n=== Parsed Fields ===");
             System.Diagnostics.Debug.WriteLine($"Requested fields ({fieldList.Count}): {string.Join(", ", fieldList)}");
-            var defaultFieldOrder = IsDailyBucket(normalizedBucket) ? DailyBucketObservationFieldOrder : DefaultObservationFieldOrder;
+            var defaultFieldOrder = DefaultObservationFieldOrder;
             
             // Check if API provided field names
             var responseFieldNames = TryGetFieldNameArray(document.RootElement);
@@ -244,12 +208,10 @@ namespace TempestData.Services
                 "b" => "5",
                 "c" => "30",
                 "d" => "180",
-                "e" => "1440",
                 "1" => "1",
                 "5" => "5",
                 "30" => "30",
                 "180" => "180",
-                "1440" => "1440",
                 _ => "1"
             };
         }
@@ -413,13 +375,6 @@ namespace TempestData.Services
             }
 
             return table;
-        }
-
-        private static bool IsDailyBucket(string? bucketValue)
-        {
-            var value = bucketValue?.Trim();
-            return string.Equals(value, "e", StringComparison.OrdinalIgnoreCase) ||
-                   string.Equals(value, "1440", StringComparison.OrdinalIgnoreCase);
         }
 
         private static List<string> TryGetFieldNameArray(JsonElement root)
