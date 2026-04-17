@@ -112,6 +112,41 @@ namespace TempestData.Services
                 query.Add($"time_end={(long)endUtc.Value.Subtract(DateTime.UnixEpoch).TotalSeconds}");
             }
 
+            if (!string.IsNullOrWhiteSpace(bucketValue))
+            {
+                query.Add($"bucket={Uri.EscapeDataString(bucketValue)}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(unitsTemp))
+            {
+                query.Add($"units_temp={Uri.EscapeDataString(unitsTemp)}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(unitsWind))
+            {
+                query.Add($"units_wind={Uri.EscapeDataString(unitsWind)}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(unitsPressure))
+            {
+                query.Add($"units_pressure={Uri.EscapeDataString(unitsPressure)}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(unitsPrecip))
+            {
+                query.Add($"units_precip={Uri.EscapeDataString(unitsPrecip)}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(unitsDistance))
+            {
+                query.Add($"units_distance={Uri.EscapeDataString(unitsDistance)}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(obsFields))
+            {
+                query.Add($"obs={Uri.EscapeDataString(obsFields)}");
+            }
+
             query.Add($"limit={maxRows}");
 
             var builder = new UriBuilder($"https://swd.weatherflow.com/swd/rest/observations/device/{deviceId}")

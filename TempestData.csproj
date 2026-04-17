@@ -9,4 +9,7 @@
     <PackageReference Include="ClosedXML" Version="0.104.0" />
     <PackageReference Include="PdfSharpCore" Version="1.3.11" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="TempestData.Tests\**\*.cs" />
+  </ItemGroup>
 </Project>

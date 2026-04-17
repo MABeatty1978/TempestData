@@ -1,5 +1,8 @@
 # TempestData – Tempest Weather Station Viewer
 
+[![Latest Release](https://img.shields.io/github/v/release/MABeatty1978/TempestData?label=Download&logo=github)](https://github.com/MABeatty1978/TempestData/releases/latest)
+[![License: CC BY-NC 4.0](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](LICENSE)
+
 A Windows desktop application for viewing and exporting observation data from your
 [WeatherFlow Tempest](https://weatherflow.com/tempest-weather-system/) weather station.
 
@@ -27,6 +30,15 @@ A Windows desktop application for viewing and exporting observation data from yo
 
 ---
 
+## Download
+
+**[⬇ Download TempestData.exe](https://github.com/MABeatty1978/TempestData/releases/latest)**
+
+Grab the latest self-contained Windows executable from the Releases page — no .NET
+installation required. Just download and run.
+
+---
+
 ## Requirements
 
 - Windows 10 / 11 (64-bit)
@@ -51,8 +63,7 @@ executable.
 
 ### Pre-built executable
 
-Download `TempestData.exe` from the [Releases](../../releases) page and double-click
-it. No installation needed.
+Download `TempestData.exe` from the [Releases](https://github.com/MABeatty1978/TempestData/releases/latest) page and double-click it. No installation needed.
 
 ### Building from source
 
