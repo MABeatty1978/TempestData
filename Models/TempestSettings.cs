@@ -7,7 +7,7 @@ namespace TempestData.Models
     {
         public string ApiKey { get; set; } = string.Empty;
         public string? SelectedStationId { get; set; }
-        public string Bucket { get; set; } = "1";
+        public string Bucket { get; set; } = "a";
         public string UnitsTemp { get; set; } = "f";
         public string UnitsWind { get; set; } = "mph";
         public string UnitsPressure { get; set; } = "inhg";

@@ -28,6 +28,7 @@ namespace TempestData
         private readonly List<ObservationField> _fields = new();
         private const string AllFieldName = "__all__";
         private const string NoneFieldName = "__none__";
+        private const string SpacerFieldPrefix = "__spacer__";
         private TempestSettings _settings = new();
         private DataTable _observationTable = new();
         private DataTable _observationTableUtc = new();
@@ -35,6 +36,9 @@ namespace TempestData
         private bool _isFieldSelectionUpdating;
         private bool _isBusy;
         private bool _isCheckingUpdates;
+        private bool _isDailyFieldMode;
+        private HashSet<string> _standardSelectedFields = new(StringComparer.OrdinalIgnoreCase);
+        private HashSet<string> _dailySelectedFields = new(StringComparer.OrdinalIgnoreCase);
         private ContextMenu? _exportContextMenu;
 
         public MainWindow()
@@ -158,42 +162,147 @@ namespace TempestData
 
         private void BuildFieldList()
         {
-            var knownFields = new List<ObservationField>
+            RebuildFieldListForSelectedBucket();
+        }
+
+        private void RebuildFieldListForSelectedBucket()
+        {
+            var isDailyBucket = string.Equals(NormalizeBucketValue(BucketComboBox.SelectedValue?.ToString()), "1440", StringComparison.OrdinalIgnoreCase);
+
+            if (_fields.Count > 0)
             {
-                new() { Name = "timestamp", DisplayName = "Timestamp" },
-                new() { Name = "wind_lull", DisplayName = "Wind Lull" },
-                new() { Name = "wind_avg", DisplayName = "Wind Average" },
-                new() { Name = "wind_gust", DisplayName = "Wind Gust" },
-                new() { Name = "wind_direction", DisplayName = "Wind Direction" },
-                new() { Name = "wind_sample_interval", DisplayName = "Wind Sample Interval" },
-                new() { Name = "pressure", DisplayName = "Pressure" },
-                new() { Name = "air_temperature", DisplayName = "Air Temperature" },
-                new() { Name = "relative_humidity", DisplayName = "Relative Humidity" },
-                new() { Name = "illuminance", DisplayName = "Illuminance" },
-                new() { Name = "uv", DisplayName = "UV" },
-                new() { Name = "solar_radiation", DisplayName = "Solar Radiation" },
-                new() { Name = "rain_accumulation", DisplayName = "Rain Accumulation" },
-                new() { Name = "precipitation_type", DisplayName = "Precipitation Type" },
-                new() { Name = "lightning_distance", DisplayName = "Lightning Distance" },
-                new() { Name = "lightning_strike_count", DisplayName = "Lightning Strike Count" },
-                new() { Name = "battery", DisplayName = "Battery" },
-                new() { Name = "reporting_interval", DisplayName = "Reporting Interval" },
-                new() { Name = "local_day_rain_accumulation", DisplayName = "Local Day Rain Accumulation" },
-                new() { Name = "nearcast_rain_accumulation", DisplayName = "Nearcast Rain Accumulation" },
-                new() { Name = "precipitation_analysis_type", DisplayName = "Precipitation Analysis Type" }
-            };
+                var currentSelected = GetSelectedRealFieldNames();
+                if (_isDailyFieldMode)
+                {
+                    _dailySelectedFields = currentSelected;
+                }
+                else
+                {
+                    _standardSelectedFields = currentSelected;
+                }
+            }
+
+            var knownFields = isDailyBucket ? BuildDailyKnownFields() : BuildStandardKnownFields();
 
             _fields.Clear();
             _fields.AddRange(knownFields);
 
-            // Place control boxes in the same 4-column table at row 6 col 2 and row 6 col 3.
-            // In zero-based index for a 4-column layout, these positions are 21 and 22.
+            // Place All/None in the last row, columns 3 and 4 (1-based).
+            const int columns = 4;
+            var remainder = _fields.Count % columns;
+            var spacerCount = (2 - remainder + columns) % columns;
+            for (var i = 0; i < spacerCount; i++)
+            {
+                _fields.Add(new ObservationField
+                {
+                    Name = $"{SpacerFieldPrefix}{i}",
+                    DisplayName = string.Empty,
+                    IsSelected = false
+                });
+            }
+
             var allField = new ObservationField { Name = AllFieldName, DisplayName = "All", IsSelected = false };
             var noneField = new ObservationField { Name = NoneFieldName, DisplayName = "None", IsSelected = false };
-            var allIndex = Math.Min(21, _fields.Count);
-            _fields.Insert(allIndex, allField);
-            var noneIndex = Math.Min(22, _fields.Count);
-            _fields.Insert(noneIndex, noneField);
+            _fields.Add(allField);
+            _fields.Add(noneField);
+
+            var preferred = isDailyBucket ? _dailySelectedFields : _standardSelectedFields;
+            foreach (var field in _fields)
+            {
+                if (string.Equals(field.Name, AllFieldName, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(field.Name, NoneFieldName, StringComparison.OrdinalIgnoreCase) ||
+                    field.Name.StartsWith(SpacerFieldPrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    field.IsSelected = false;
+                    continue;
+                }
+
+                field.IsSelected = preferred.Count == 0 || preferred.Contains(field.Name);
+            }
+
+            _isDailyFieldMode = isDailyBucket;
+            SyncControlFieldStates();
+            FieldCheckList.ItemsSource = _fields;
+            FieldCheckList.Items.Refresh();
+        }
+
+        private static List<ObservationField> BuildStandardKnownFields()
+        {
+            return new List<ObservationField>
+            {
+                new() { Name = "timestamp", DisplayName = "Timestamp" },
+                new() { Name = "report_interval", DisplayName = "Report Interval" },
+                new() { Name = "wind_lull", DisplayName = "Wind Lull" },
+                new() { Name = "wind_avg", DisplayName = "Wind Average" },
+                new() { Name = "wind_gust", DisplayName = "Wind Gust" },
+                new() { Name = "wind_dir", DisplayName = "Wind Direction" },
+                new() { Name = "station_pressure", DisplayName = "Station Pressure" },
+                new() { Name = "sea_level_pressure", DisplayName = "Sea Level Pressure" },
+                new() { Name = "air_temp", DisplayName = "Air Temperature" },
+                new() { Name = "rh", DisplayName = "Relative Humidity" },
+                new() { Name = "illuminance", DisplayName = "Illuminance" },
+                new() { Name = "uv", DisplayName = "UV" },
+                new() { Name = "solar_radiation", DisplayName = "Solar Radiation" },
+                new() { Name = "precip_accumulation", DisplayName = "Precipitation Accumulation" },
+                new() { Name = "precip_type", DisplayName = "Precipitation Type" },
+                new() { Name = "strike_count", DisplayName = "Lightning Strike Count" },
+                new() { Name = "strike_distance", DisplayName = "Lightning Average Distance" },
+                new() { Name = "nc_precip_accumulation", DisplayName = "Nearcast Precip Accumulation" },
+                    new() { Name = "local_day_precip_accumulation", DisplayName = "Local Day Precip Accumulation" },
+                    new() { Name = "nc_local_day_precip_accumulation", DisplayName = "Local Day Nearcast Precip Accumulation" }
+            };
+        }
+
+        private static List<ObservationField> BuildDailyKnownFields()
+        {
+            return new List<ObservationField>
+            {
+                new() { Name = "timestamp", DisplayName = "Timestamp" },
+                new() { Name = "average_pressure", DisplayName = "Average Pressure" },
+                new() { Name = "highest_pressure", DisplayName = "Highest Pressure" },
+                new() { Name = "lowest_pressure", DisplayName = "Lowest Pressure" },
+                new() { Name = "average_temperature", DisplayName = "Average Temperature" },
+                new() { Name = "highest_temperature", DisplayName = "Highest Temperature" },
+                new() { Name = "lowest_temperature", DisplayName = "Lowest Temperature" },
+                new() { Name = "average_humidity", DisplayName = "Average Humidity" },
+                new() { Name = "highest_humidity", DisplayName = "Highest Humidity" },
+                new() { Name = "lowest_humidity", DisplayName = "Lowest Humidity" },
+                new() { Name = "average_illuminance", DisplayName = "Average Illuminance" },
+                new() { Name = "highest_illuminance", DisplayName = "Highest Illuminance" },
+                new() { Name = "lowest_illuminance", DisplayName = "Lowest Illuminance" },
+                new() { Name = "average_uv", DisplayName = "Average UV" },
+                new() { Name = "highest_uv", DisplayName = "Highest UV" },
+                new() { Name = "lowest_uv", DisplayName = "Lowest UV" },
+                new() { Name = "average_solar_radiation", DisplayName = "Average Solar Radiation" },
+                new() { Name = "highest_solar_radiation", DisplayName = "Highest Solar Radiation" },
+                new() { Name = "lowest_solar_radiation", DisplayName = "Lowest Solar Radiation" },
+                new() { Name = "average_wind_speed", DisplayName = "Average Wind Speed" },
+                new() { Name = "wind_gust", DisplayName = "Wind Gust" },
+                new() { Name = "wind_lull", DisplayName = "Wind Lull" },
+                new() { Name = "average_wind_direction", DisplayName = "Average Wind Direction" },
+                new() { Name = "wind_sample_interval", DisplayName = "Wind Sample Interval" },
+                new() { Name = "strike_count", DisplayName = "Strike Count" },
+                new() { Name = "average_strike_distance", DisplayName = "Average Strike Distance" },
+                new() { Name = "record_count", DisplayName = "Record Count" },
+                new() { Name = "battery", DisplayName = "Battery" },
+                new() { Name = "local_day_rain_accumulation", DisplayName = "Local Day Rain Accumulation" },
+                new() { Name = "local_day_nearcast_rain_accumulation", DisplayName = "Local Day Nearcast Rain Accumulation" },
+                new() { Name = "local_day_precipitation_minutes", DisplayName = "Local Day Precipitation Minutes" },
+                new() { Name = "local_day_nearcast_precipitation_minutes", DisplayName = "Local Day Nearcast Precipitation Minutes" },
+                new() { Name = "precipitation_type", DisplayName = "Precipitation Type" },
+                new() { Name = "precipitation_analysis_type", DisplayName = "Precipitation Analysis Type" }
+            };
+        }
+
+        private HashSet<string> GetSelectedRealFieldNames()
+        {
+            return _fields
+                .Where(f => f.IsSelected &&
+                            !string.Equals(f.Name, AllFieldName, StringComparison.OrdinalIgnoreCase) &&
+                            !string.Equals(f.Name, NoneFieldName, StringComparison.OrdinalIgnoreCase) &&
+                            !f.Name.StartsWith(SpacerFieldPrefix, StringComparison.OrdinalIgnoreCase))
+                .Select(f => f.Name)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
         }
 
         private async Task LoadSettingsAsync()
@@ -206,7 +315,7 @@ namespace TempestData
                 await Dispatcher.InvokeAsync(() =>
                 {
                     ApiKeyBox.Text = _settings.ApiKey;
-                    BucketComboBox.SelectedValue = _settings.Bucket;
+                    BucketComboBox.SelectedValue = NormalizeBucketValue(_settings.Bucket);
                     UnitsTempComboBox.SelectedValue = _settings.UnitsTemp;
                     UnitsWindComboBox.SelectedValue = _settings.UnitsWind;
                     UnitsPressureComboBox.SelectedValue = _settings.UnitsPressure;
@@ -238,22 +347,17 @@ namespace TempestData
                     }
                     UpdateTimeZoneLabels();
 
-                    foreach (var field in _fields)
+                    var normalizedBucket = NormalizeBucketValue(_settings.Bucket);
+                    if (string.Equals(normalizedBucket, "1440", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (string.Equals(field.Name, AllFieldName, StringComparison.OrdinalIgnoreCase) ||
-                            string.Equals(field.Name, NoneFieldName, StringComparison.OrdinalIgnoreCase))
-                        {
-                            field.IsSelected = false;
-                        }
-                        else
-                        {
-                            field.IsSelected = _settings.SelectedFields.Count == 0 || _settings.SelectedFields.Contains(field.Name, StringComparer.OrdinalIgnoreCase);
-                        }
+                        _dailySelectedFields = _settings.SelectedFields.ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    }
+                    else
+                    {
+                        _standardSelectedFields = _settings.SelectedFields.ToHashSet(StringComparer.OrdinalIgnoreCase);
                     }
 
-                    SyncControlFieldStates();
-
-                    FieldCheckList.Items.Refresh();
+                    RebuildFieldListForSelectedBucket();
                 });
 
                 if (!string.IsNullOrWhiteSpace(_settings.ApiKey))
@@ -283,7 +387,7 @@ namespace TempestData
                 var selectedStationId = StationComboBox.SelectedValue?.ToString();
                 _settings.SelectedStationId = !string.IsNullOrWhiteSpace(selectedStationId) ? selectedStationId : null;
                 
-                _settings.Bucket = BucketComboBox.SelectedValue?.ToString() ?? "1";
+                _settings.Bucket = NormalizeBucketValue(BucketComboBox.SelectedValue?.ToString());
                 _settings.UnitsTemp = UnitsTempComboBox.SelectedValue?.ToString() ?? "f";
                 _settings.UnitsWind = UnitsWindComboBox.SelectedValue?.ToString() ?? "mph";
                 _settings.UnitsPressure = UnitsPressureComboBox.SelectedValue?.ToString() ?? "inhg";
@@ -293,7 +397,10 @@ namespace TempestData
                 _settings.StartTimeUtc = ParseDateTime(StartDatePicker, StartTimeBox);
                 _settings.EndTimeUtc = ParseDateTime(EndDatePicker, EndTimeBox);
                 _settings.SelectedFields = _fields
-                    .Where(f => f.IsSelected && !string.Equals(f.Name, AllFieldName, StringComparison.OrdinalIgnoreCase) && !string.Equals(f.Name, NoneFieldName, StringComparison.OrdinalIgnoreCase))
+                    .Where(f => f.IsSelected &&
+                                !string.Equals(f.Name, AllFieldName, StringComparison.OrdinalIgnoreCase) &&
+                                !string.Equals(f.Name, NoneFieldName, StringComparison.OrdinalIgnoreCase) &&
+                                !f.Name.StartsWith(SpacerFieldPrefix, StringComparison.OrdinalIgnoreCase))
                     .Select(f => f.Name)
                     .ToList();
 
@@ -471,6 +578,18 @@ namespace TempestData
             await SaveSettingsAsync().ConfigureAwait(false);
         }
 
+        private async void BucketComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            RebuildFieldListForSelectedBucket();
+
+            if (_isInitializing)
+            {
+                return;
+            }
+
+            await SaveSettingsAsync().ConfigureAwait(false);
+        }
+
         private void TimeZoneComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             UpdateTimeZoneLabels();
@@ -510,7 +629,8 @@ namespace TempestData
                 {
                     foreach (var field in _fields)
                     {
-                        if (string.Equals(field.Name, NoneFieldName, StringComparison.OrdinalIgnoreCase))
+                        if (field.Name.StartsWith(SpacerFieldPrefix, StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(field.Name, NoneFieldName, StringComparison.OrdinalIgnoreCase))
                         {
                             field.IsSelected = false;
                         }
@@ -527,6 +647,10 @@ namespace TempestData
                         if (string.Equals(field.Name, NoneFieldName, StringComparison.OrdinalIgnoreCase))
                         {
                             field.IsSelected = true;
+                        }
+                        else if (field.Name.StartsWith(SpacerFieldPrefix, StringComparison.OrdinalIgnoreCase))
+                        {
+                            field.IsSelected = false;
                         }
                         else
                         {
@@ -554,7 +678,8 @@ namespace TempestData
             var noneField = _fields.FirstOrDefault(f => string.Equals(f.Name, NoneFieldName, StringComparison.OrdinalIgnoreCase));
             var realFields = _fields.Where(f =>
                 !string.Equals(f.Name, AllFieldName, StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(f.Name, NoneFieldName, StringComparison.OrdinalIgnoreCase)).ToList();
+                !string.Equals(f.Name, NoneFieldName, StringComparison.OrdinalIgnoreCase) &&
+                !f.Name.StartsWith(SpacerFieldPrefix, StringComparison.OrdinalIgnoreCase)).ToList();
 
             var allRealSelected = realFields.Count > 0 && realFields.All(f => f.IsSelected);
             var anyRealSelected = realFields.Any(f => f.IsSelected);
@@ -686,11 +811,13 @@ namespace TempestData
                 {
                     StationComboBox.ItemsSource = stations;
                     StationComboBox.DisplayMemberPath = "Name";
-                    StationComboBox.SelectedValuePath = "DeviceId";
+                    StationComboBox.SelectedValuePath = "StationId";
                     
-                    if (!string.IsNullOrWhiteSpace(_settings.SelectedStationId) && int.TryParse(_settings.SelectedStationId, out var savedDeviceId))
+                    if (!string.IsNullOrWhiteSpace(_settings.SelectedStationId))
                     {
-                        var matchingStation = stations.FirstOrDefault(s => s.DeviceId == savedDeviceId);
+                        var matchingStation = stations.FirstOrDefault(s =>
+                            string.Equals(s.StationId, _settings.SelectedStationId, StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(s.DeviceId?.ToString(), _settings.SelectedStationId, StringComparison.OrdinalIgnoreCase));
                         if (matchingStation != null)
                         {
                             StationComboBox.SelectedItem = matchingStation;
@@ -734,27 +861,27 @@ namespace TempestData
                     return;
                 }
 
-                var deviceId = StationComboBox.SelectedValue?.ToString();
-                if (string.IsNullOrWhiteSpace(deviceId) && StationComboBox.SelectedItem is TempestStation selectedStation)
+                var stationId = StationComboBox.SelectedValue?.ToString();
+                if (string.IsNullOrWhiteSpace(stationId) && StationComboBox.SelectedItem is TempestStation selectedStation)
                 {
-                    deviceId = selectedStation.DeviceId?.ToString();
+                    stationId = selectedStation.StationId;
                 }
 
-                if (string.IsNullOrWhiteSpace(deviceId))
+                if (string.IsNullOrWhiteSpace(stationId))
                 {
                     var stations = StationComboBox.ItemsSource as IList<TempestStation>;
                     if (stations?.Count > 0)
                     {
-                        deviceId = stations[0].DeviceId?.ToString();
+                        stationId = stations[0].StationId;
                         await Dispatcher.InvokeAsync(() => StationComboBox.SelectedItem = stations[0]);
                     }
                 }
 
-                if (string.IsNullOrWhiteSpace(deviceId))
+                if (string.IsNullOrWhiteSpace(stationId))
                 {
                     var count = (StationComboBox.ItemsSource as IList<TempestStation>)?.Count ?? 0;
                     SetStatus(count > 0
-                        ? "A station is listed but it has no device ID. Refresh stations again or select a station with a device."
+                        ? "A station is listed but it has no station ID. Refresh stations again or select another station."
                         : "No station is selected. Refresh stations to populate the list first.");
                     return;
                 }
@@ -763,22 +890,28 @@ namespace TempestData
                 fields = fields
                     .Where(name =>
                         !string.Equals(name, AllFieldName, StringComparison.OrdinalIgnoreCase) &&
-                        !string.Equals(name, NoneFieldName, StringComparison.OrdinalIgnoreCase))
+                        !string.Equals(name, NoneFieldName, StringComparison.OrdinalIgnoreCase) &&
+                        !name.StartsWith(SpacerFieldPrefix, StringComparison.OrdinalIgnoreCase))
                     .ToList();
                 var obsFields = string.Join(",", fields);
 
                 var startDate = ParseDateTime(StartDatePicker, StartTimeBox);
                 var endDate = ParseDateTime(EndDatePicker, EndTimeBox);
+                var selectedBucket = NormalizeBucketValue(BucketComboBox.SelectedValue?.ToString());
 
-                var expectedRows = EstimateExpectedRows(BucketComboBox.SelectedValue?.ToString(), startDate, endDate);
-                if (expectedRows > 2000)
+                if (TryBuildBucketRangeWarning(selectedBucket, startDate, endDate, out var rangeWarning))
                 {
-                    MessageBox.Show(
+                    var proceed = MessageBox.Show(
                         this,
-                    "Large data sets may cause errors or the resolution to be automatically adjusted to prevent errors.",
-                        "Large Data Volume Warning",
-                        MessageBoxButton.OK,
+                        rangeWarning,
+                        "Requested Range Warning",
+                        MessageBoxButton.YesNo,
                         MessageBoxImage.Warning);
+                    if (proceed != MessageBoxResult.Yes)
+                    {
+                        SetStatus("Load cancelled by user.");
+                        return;
+                    }
                 }
 
                 SetBusy(true, "Loading observations...");
@@ -786,8 +919,8 @@ namespace TempestData
 
                 _observationTable = await _apiClient.GetObservationsAsync(
                     apiKey,
-                    deviceId,
-                    BucketComboBox.SelectedValue?.ToString() ?? "1",
+                    stationId,
+                    selectedBucket,
                     UnitsTempComboBox.SelectedValue?.ToString() ?? "c",
                     UnitsWindComboBox.SelectedValue?.ToString() ?? "mps",
                     UnitsPressureComboBox.SelectedValue?.ToString() ?? "mb",
@@ -798,6 +931,17 @@ namespace TempestData
                     endDate,
                     _settings.PageSize)
                     .ConfigureAwait(false);
+
+                // DEBUG: Log what was returned
+                var columnNames = string.Join(", ", _observationTable.Columns.Cast<DataColumn>().Select(c => c.ColumnName));
+                var debugInfo = $"Requested fields: {obsFields}\nReturned columns: {columnNames}";
+                if (_observationTable.Rows.Count > 0)
+                {
+                    var firstRow = _observationTable.Rows[0];
+                    var values = string.Join(" | ", _observationTable.Columns.Cast<DataColumn>().Select(c => $"{c.ColumnName}={firstRow[c.ColumnName]}"));
+                    debugInfo += $"\nFirst row: {values}";
+                }
+                System.Diagnostics.Debug.WriteLine("\n=== DEBUG INFO ===\n" + debugInfo);
 
                 _observationTable = FilterObservationTableToSelectedFields(_observationTable, fields);
                 _observationTable = NormalizeNumericColumns(_observationTable);
@@ -811,11 +955,11 @@ namespace TempestData
 
                 if (_observationTable.Rows.Count == 0)
                 {
-                    SetStatus($"No observations were returned for device {deviceId}. Verify the station/device, API token, and selected date range ({startDate:yyyy-MM-dd HH:mm} to {endDate:yyyy-MM-dd HH:mm} UTC).");
+                    SetStatus($"No observations were returned for station {stationId}. Verify the station, API token, and selected date range ({startDate:yyyy-MM-dd HH:mm} to {endDate:yyyy-MM-dd HH:mm} UTC).");
                 }
                 else
                 {
-                    SetStatus($"Loaded {_observationTable.Rows.Count} observation row(s) for device {deviceId}.\nRemember: exports include only visible fields.");
+                    SetStatus($"Loaded {_observationTable.Rows.Count} observation row(s) for station {stationId}.\nRemember: exports include only visible fields.");
                 }
 
                 UpdateExportButtonState();
@@ -1093,16 +1237,78 @@ namespace TempestData
             return false;
         }
 
-        private int EstimateExpectedRows(string? bucketValue, DateTime? startUtc, DateTime? endUtc)
+        private static string NormalizeBucketValue(string? bucketValue)
         {
-            if (!startUtc.HasValue || !endUtc.HasValue)
+            if (string.IsNullOrWhiteSpace(bucketValue))
             {
-                return 0;
+                return "1";
             }
 
-            if (!int.TryParse(bucketValue, out var bucketMinutes) || bucketMinutes <= 0)
+            return bucketValue.Trim().ToLowerInvariant() switch
             {
-                return 0;
+                "a" => "1",
+                "b" => "5",
+                "c" => "30",
+                "d" => "180",
+                "e" => "1440",
+                "1" => "1",
+                "5" => "5",
+                "30" => "30",
+                "180" => "180",
+                "1440" => "1440",
+                _ => "1"
+            };
+        }
+
+        private static bool TryGetBucketDefinition(string bucketValue, out int stepMinutes, out int? maxRangeDays, out string label)
+        {
+            stepMinutes = 1;
+            maxRangeDays = 1;
+            label = "1 minute";
+
+            switch (NormalizeBucketValue(bucketValue))
+            {
+                case "1":
+                    stepMinutes = 1;
+                    maxRangeDays = 1;
+                    label = "1 minute";
+                    return true;
+                case "5":
+                    stepMinutes = 5;
+                    maxRangeDays = 5;
+                    label = "5 minutes";
+                    return true;
+                case "30":
+                    stepMinutes = 30;
+                    maxRangeDays = 30;
+                    label = "30 minutes";
+                    return true;
+                case "180":
+                    stepMinutes = 180;
+                    maxRangeDays = 180;
+                    label = "180 minutes";
+                    return true;
+                case "1440":
+                    stepMinutes = 1440;
+                    maxRangeDays = null;
+                    label = "1 day";
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private static bool TryBuildBucketRangeWarning(string bucketValue, DateTime? startUtc, DateTime? endUtc, out string warningMessage)
+        {
+            warningMessage = string.Empty;
+            if (!startUtc.HasValue || !endUtc.HasValue)
+            {
+                return false;
+            }
+
+            if (!TryGetBucketDefinition(bucketValue, out _, out var maxRangeDays, out var label) || !maxRangeDays.HasValue)
+            {
+                return false;
             }
 
             var start = startUtc.Value;
@@ -1117,7 +1323,7 @@ namespace TempestData
 
             if (start > nowUtc)
             {
-                return 0;
+                return false;
             }
 
             if (end < start)
@@ -1125,8 +1331,18 @@ namespace TempestData
                 (start, end) = (end, start);
             }
 
-            var totalMinutes = (end - start).TotalMinutes;
-            return (int)Math.Ceiling(totalMinutes / bucketMinutes) + 1;
+            var requestedSpan = end - start;
+            if (requestedSpan <= TimeSpan.FromDays(maxRangeDays.Value))
+            {
+                return false;
+            }
+
+            warningMessage =
+                $"The selected resolution ({label}) supports a maximum range of {maxRangeDays.Value} day(s).\n\n" +
+                $"Requested range: {requestedSpan.TotalDays:F1} day(s).\n\n" +
+                "The API may reject or adjust this request. Continue anyway?";
+
+            return true;
         }
 
         private static DataTable FilterObservationTableToSelectedFields(DataTable source, IList<string> selectedFields)

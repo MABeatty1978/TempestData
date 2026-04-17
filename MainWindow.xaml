@@ -101,7 +101,7 @@
 
                     <StackPanel Grid.Row="0" Grid.Column="0" Style="{StaticResource ControlGroup}">
                         <TextBlock Text="Resolution" />
-                        <ComboBox x:Name="BucketComboBox" Width="90" MinWidth="90" MaxWidth="90" HorizontalAlignment="Left" />
+                        <ComboBox x:Name="BucketComboBox" Width="90" MinWidth="90" MaxWidth="90" HorizontalAlignment="Left" SelectionChanged="BucketComboBox_SelectionChanged" />
                     </StackPanel>
 
                     <StackPanel Grid.Row="0" Grid.Column="1" Style="{StaticResource ControlGroup}">
@@ -161,7 +161,24 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <CheckBox Content="{Binding DisplayName}" IsChecked="{Binding IsSelected, Mode=TwoWay}" Margin="0,0,12,6" Checked="FieldCheckBox_Changed" Unchecked="FieldCheckBox_Changed" />
+                                    <CheckBox Content="{Binding DisplayName}" IsChecked="{Binding IsSelected, Mode=TwoWay}" Margin="0,0,12,6" Checked="FieldCheckBox_Changed" Unchecked="FieldCheckBox_Changed">
+                                        <CheckBox.Style>
+                                            <Style TargetType="CheckBox">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding DisplayName}" Value="All">
+                                                        <Setter Property="FontWeight" Value="Bold" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding DisplayName}" Value="None">
+                                                        <Setter Property="FontWeight" Value="Bold" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding DisplayName}" Value="">
+                                                        <Setter Property="Visibility" Value="Hidden" />
+                                                        <Setter Property="IsHitTestVisible" Value="False" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </CheckBox.Style>
+                                    </CheckBox>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>

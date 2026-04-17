@@ -15,27 +15,64 @@ namespace TempestData.Services
         private readonly HttpClient _httpClient;
         private static readonly string[] DefaultObservationFieldOrder =
         {
-            "timestamp",
-            "wind_lull",
-            "wind_avg",
-            "wind_gust",
-            "wind_direction",
-            "wind_sample_interval",
-            "pressure",
-            "air_temperature",
-            "relative_humidity",
-            "illuminance",
-            "uv",
-            "solar_radiation",
-            "rain_accumulation",
-            "precipitation_type",
-            "lightning_distance",
-            "lightning_strike_count",
-            "battery",
-            "reporting_interval",
-            "local_day_rain_accumulation",
-            "nearcast_rain_accumulation",
-            "precipitation_analysis_type"
+            "timestamp",                               // 0
+            "report_interval",                        // 1
+            "wind_lull",                              // 2
+            "wind_avg",                               // 3
+            "wind_gust",                              // 4
+            "wind_dir",                               // 5
+            "station_pressure",                       // 6
+            "sea_level_pressure",                     // 7
+            "air_temp",                               // 8
+            "rh",                                     // 9
+            "illuminance",                            // 10
+            "uv",                                     // 11
+            "solar_radiation",                        // 12
+            "precip_accumulation",                    // 13
+            "local_day_precip_accumulation",          // 14
+            "precip_type",                            // 15
+            "strike_count",                           // 16
+            "strike_distance",                        // 17
+            "nc_precip_accumulation",                 // 18
+            "nc_local_day_precip_accumulation"        // 19
+        };
+
+        private static readonly string[] DailyBucketObservationFieldOrder =
+        {
+            "timestamp",                              // 0
+            "average_pressure",                       // 1
+            "highest_pressure",                       // 2
+            "lowest_pressure",                        // 3
+            "average_temperature",                    // 4
+            "highest_temperature",                    // 5
+            "lowest_temperature",                     // 6
+            "average_humidity",                       // 7
+            "highest_humidity",                       // 8
+            "lowest_humidity",                        // 9
+            "average_illuminance",                    // 10
+            "highest_illuminance",                    // 11
+            "lowest_illuminance",                     // 12
+            "average_uv",                             // 13
+            "highest_uv",                             // 14
+            "lowest_uv",                              // 15
+            "average_solar_radiation",                // 16
+            "highest_solar_radiation",                // 17
+            "lowest_solar_radiation",                 // 18
+            "average_wind_speed",                     // 19
+            "wind_gust",                              // 20
+            "wind_lull",                              // 21
+            "average_wind_direction",                 // 22
+            "wind_sample_interval",                   // 23
+            "strike_count",                           // 24
+            "average_strike_distance",                // 25
+            "record_count",                           // 26
+            "battery",                                // 27
+            "local_day_rain_accumulation",            // 28
+            "local_day_nearcast_rain_accumulation",   // 29
+            "local_day_precipitation_minutes",        // 30
+            "local_day_nearcast_precipitation_minutes",// 31
+            "precipitation_type",                     // 32
+            "precipitation_analysis_type"             // 33
         };
 
         public TempestApiClient(HttpClient httpClient)
@@ -112,9 +149,10 @@ namespace TempestData.Services
                 query.Add($"time_end={(long)endUtc.Value.Subtract(DateTime.UnixEpoch).TotalSeconds}");
             }
 
-            if (!string.IsNullOrWhiteSpace(bucketValue))
+            var normalizedBucket = NormalizeBucketForApi(bucketValue);
+            if (!string.IsNullOrWhiteSpace(normalizedBucket))
             {
-                query.Add($"bucket={Uri.EscapeDataString(bucketValue)}");
+                query.Add($"bucket={Uri.EscapeDataString(normalizedBucket)}");
             }
 
             if (!string.IsNullOrWhiteSpace(unitsTemp))
@@ -142,14 +180,16 @@ namespace TempestData.Services
                 query.Add($"units_distance={Uri.EscapeDataString(unitsDistance)}");
             }
 
-            if (!string.IsNullOrWhiteSpace(obsFields))
-            {
-                query.Add($"obs={Uri.EscapeDataString(obsFields)}");
-            }
+            // NOTE: obs_fields parameter may not be supported by station endpoint or may not filter results
+            // Commenting out for now - we'll filter on client side instead
+            // if (!string.IsNullOrWhiteSpace(obsFields))
+            // {
+            //     query.Add($"obs_fields={Uri.EscapeDataString(obsFields)}");
+            // }
 
             query.Add($"limit={maxRows}");
 
-            var builder = new UriBuilder($"https://swd.weatherflow.com/swd/rest/observations/device/{deviceId}")
+            var builder = new UriBuilder($"https://swd.weatherflow.com/swd/rest/observations/stn/{deviceId}")
             {
                 Query = string.Join("&", query)
             };
@@ -161,9 +201,57 @@ namespace TempestData.Services
                 throw new HttpRequestException($"Response status code does not indicate success: {(int)response.StatusCode} ({response.ReasonPhrase}). Body: {body}");
             }
 
+            // DEBUG: Log request and response details
+            System.Diagnostics.Debug.WriteLine($"\n=== API Request ===");
+            System.Diagnostics.Debug.WriteLine($"URL: {builder.Uri}");
+            System.Diagnostics.Debug.WriteLine($"obsFields parameter: {obsFields ?? "(empty)"}");
+            System.Diagnostics.Debug.WriteLine($"\n=== API Response ===");
+            System.Diagnostics.Debug.WriteLine($"Body: {body}");
+
             using var document = JsonDocument.Parse(body);
             var fieldList = string.IsNullOrWhiteSpace(obsFields) ? new List<string>() : obsFields.Split(',').Select(f => f.Trim()).ToList();
-            return ParseObservations(document.RootElement, maxRows, fieldList);
+            System.Diagnostics.Debug.WriteLine($"\n=== Parsed Fields ===");
+            System.Diagnostics.Debug.WriteLine($"Requested fields ({fieldList.Count}): {string.Join(", ", fieldList)}");
+            var defaultFieldOrder = IsDailyBucket(normalizedBucket) ? DailyBucketObservationFieldOrder : DefaultObservationFieldOrder;
+            
+            // Check if API provided field names
+            var responseFieldNames = TryGetFieldNameArray(document.RootElement);
+            System.Diagnostics.Debug.WriteLine($"API-provided field names ({responseFieldNames.Count}): {string.Join(", ", responseFieldNames.Take(10))}...");
+            System.Diagnostics.Debug.WriteLine($"Default field order ({defaultFieldOrder.Length}): {string.Join(", ", defaultFieldOrder.Take(10))}...");
+            
+            var result = ParseObservations(document.RootElement, maxRows, fieldList, defaultFieldOrder);
+            System.Diagnostics.Debug.WriteLine($"\n=== Parse Result ===");
+            System.Diagnostics.Debug.WriteLine($"Columns ({result.Columns.Count}): {string.Join(", ", result.Columns.Cast<DataColumn>().Select(c => c.ColumnName))}");
+            if (result.Rows.Count > 0)
+            {
+                var firstRow = result.Rows[0];
+                var values = string.Join(" | ", result.Columns.Cast<DataColumn>().Select(c => $"{c.ColumnName}={firstRow[c.ColumnName]}"));
+                System.Diagnostics.Debug.WriteLine($"First row: {values}");
+            }
+            return result;
+        }
+
+        private static string NormalizeBucketForApi(string? bucketValue)
+        {
+            if (string.IsNullOrWhiteSpace(bucketValue))
+            {
+                return "1";
+            }
+
+            return bucketValue.Trim().ToLowerInvariant() switch
+            {
+                "a" => "1",
+                "b" => "5",
+                "c" => "30",
+                "d" => "180",
+                "e" => "1440",
+                "1" => "1",
+                "5" => "5",
+                "30" => "30",
+                "180" => "180",
+                "1440" => "1440",
+                _ => "1"
+            };
         }
 
         private static (int? deviceId, string deviceType) ParseStationDeviceInfo(JsonElement station)
@@ -198,38 +286,42 @@ namespace TempestData.Services
             return (null, string.Empty);
         }
 
-        private static DataTable ParseObservations(JsonElement root, int maxRows, List<string>? fieldNames = null)
+        private static DataTable ParseObservations(JsonElement root, int maxRows, List<string>? fieldNames = null, string[]? defaultFieldOrder = null)
         {
             fieldNames ??= new List<string>();
+            defaultFieldOrder ??= DefaultObservationFieldOrder;
+            var responseFieldNames = TryGetFieldNameArray(root);
+            var effectiveFieldNames = responseFieldNames.Count > 0 ? responseFieldNames : fieldNames;
             if (root.ValueKind == JsonValueKind.Object)
             {
                 if (TryGetArrayProperty(root, "observations", out var observationArray))
                 {
-                    return ParseObservationArray(observationArray, maxRows, fieldNames);
+                    return ParseObservationArray(observationArray, maxRows, effectiveFieldNames, defaultFieldOrder);
                 }
 
                 if (TryGetArrayProperty(root, "obs", out var obsArray))
                 {
-                    return ParseObservationArray(obsArray, maxRows, fieldNames);
+                    return ParseObservationArray(obsArray, maxRows, effectiveFieldNames, defaultFieldOrder);
                 }
 
                 if (TryGetArrayProperty(root, "data", out var dataArray))
                 {
-                    return ParseObservationArray(dataArray, maxRows, fieldNames);
+                    return ParseObservationArray(dataArray, maxRows, effectiveFieldNames, defaultFieldOrder);
                 }
             }
 
             if (root.ValueKind == JsonValueKind.Array)
             {
-                return ParseObservationArray(root, maxRows, fieldNames);
+                return ParseObservationArray(root, maxRows, effectiveFieldNames, defaultFieldOrder);
             }
 
             return new DataTable("Observations");
         }
 
-        private static DataTable ParseObservationArray(JsonElement array, int maxRows, List<string>? fieldNames = null)
+        private static DataTable ParseObservationArray(JsonElement array, int maxRows, List<string>? fieldNames = null, string[]? defaultFieldOrder = null)
         {
             fieldNames ??= new List<string>();
+            defaultFieldOrder ??= DefaultObservationFieldOrder;
             if (!array.EnumerateArray().Any())
             {
                 return new DataTable("Observations");
@@ -239,14 +331,15 @@ namespace TempestData.Services
             return firstItem.ValueKind switch
             {
                 JsonValueKind.Object => ParseObjectArray(array, maxRows, fieldNames),
-                JsonValueKind.Array => ParseArrayRowArray(array, maxRows, fieldNames),
+                JsonValueKind.Array => ParseArrayRowArray(array, maxRows, fieldNames, defaultFieldOrder),
                 _ => new DataTable("Observations")
             };
         }
 
-        private static DataTable ParseArrayRowArray(JsonElement array, int maxRows, List<string>? fieldNames = null)
+        private static DataTable ParseArrayRowArray(JsonElement array, int maxRows, List<string>? fieldNames = null, string[]? defaultFieldOrder = null)
         {
             fieldNames ??= new List<string>();
+            defaultFieldOrder ??= DefaultObservationFieldOrder;
             var rows = new List<List<string>>();
             var maxColumns = 0;
             var count = 0;
@@ -282,11 +375,29 @@ namespace TempestData.Services
             }
 
             var table = new DataTable("Observations");
+            var useFieldNames = fieldNames.Count > 0 && fieldNames.Count == maxColumns;
             for (var i = 0; i < maxColumns; i++)
             {
-                var columnName = i < DefaultObservationFieldOrder.Length
-                    ? DefaultObservationFieldOrder[i]
-                    : $"Value{i}";
+                var requestedName = useFieldNames && i < fieldNames.Count ? fieldNames[i] : string.Empty;
+                var columnName = !string.IsNullOrWhiteSpace(requestedName)
+                    ? requestedName
+                    : i < defaultFieldOrder.Length
+                        ? defaultFieldOrder[i]
+                        : $"Value{i}";
+
+                // Prevent duplicate names when requested fields contain duplicates.
+                if (table.Columns.Contains(columnName))
+                {
+                    var suffix = 2;
+                    var baseName = columnName;
+                    while (table.Columns.Contains($"{baseName}_{suffix}"))
+                    {
+                        suffix++;
+                    }
+
+                    columnName = $"{baseName}_{suffix}";
+                }
+
                 table.Columns.Add(columnName, typeof(string));
             }
 
@@ -302,6 +413,65 @@ namespace TempestData.Services
             }
 
             return table;
+        }
+
+        private static bool IsDailyBucket(string? bucketValue)
+        {
+            var value = bucketValue?.Trim();
+            return string.Equals(value, "e", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(value, "1440", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static List<string> TryGetFieldNameArray(JsonElement root)
+        {
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return new List<string>();
+            }
+
+            var candidateNames = new[]
+            {
+                "ob_fields",
+                "obs_fields",
+                "observation_fields",
+                "fields",
+                "field_names",
+                "column_names"
+            };
+
+            foreach (var candidate in candidateNames)
+            {
+                if (!root.TryGetProperty(candidate, out var fieldElement) || fieldElement.ValueKind != JsonValueKind.Array)
+                {
+                    continue;
+                }
+
+                var names = new List<string>();
+                foreach (var item in fieldElement.EnumerateArray())
+                {
+                    if (item.ValueKind != JsonValueKind.String)
+                    {
+                        names.Clear();
+                        break;
+                    }
+
+                    var name = item.GetString();
+                    if (string.IsNullOrWhiteSpace(name))
+                    {
+                        names.Clear();
+                        break;
+                    }
+
+                    names.Add(name.Trim());
+                }
+
+                if (names.Count > 0)
+                {
+                    return names;
+                }
+            }
+
+            return new List<string>();
         }
 
         private static bool TryGetArrayProperty(JsonElement parent, string propertyName, out JsonElement arrayElement)
