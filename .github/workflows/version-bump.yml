@@ -1,0 +1,121 @@
+name: Version Bump
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_type:
+        description: 'Version increment type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read and increment version
+        id: versioning
+        shell: bash
+        run: |
+          CSPROJ="TempestData.csproj"
+
+          # Extract current version (e.g. 1.0.3)
+          CURRENT=$(grep -oP '(?<=<Version>)[^<]+' "$CSPROJ")
+          if [[ -z "$CURRENT" ]]; then
+            echo "::error::Could not find a <Version> tag in $CSPROJ"
+            exit 1
+          fi
+          echo "Current version: $CURRENT"
+
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+          if ! [[ "$MAJOR" =~ ^[0-9]+$ && "$MINOR" =~ ^[0-9]+$ && "$PATCH" =~ ^[0-9]+$ ]]; then
+            echo "::error::Version '$CURRENT' is not in the expected MAJOR.MINOR.PATCH format"
+            exit 1
+          fi
+
+          case "${{ github.event.inputs.version_type }}" in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          NEW_FILE_VERSION="${MAJOR}.${MINOR}.${PATCH}.0"
+          echo "New version: $NEW_VERSION"
+
+          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "new_file_version=$NEW_FILE_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Update version in TempestData.csproj
+        shell: bash
+        run: |
+          CSPROJ="TempestData.csproj"
+          NEW_VERSION="${{ steps.versioning.outputs.new_version }}"
+          NEW_FILE_VERSION="${{ steps.versioning.outputs.new_file_version }}"
+
+          # Update required version fields
+          sed -i "s|<Version>[^<]*</Version>|<Version>${NEW_VERSION}</Version>|g" "$CSPROJ"
+          sed -i "s|<FileVersion>[^<]*</FileVersion>|<FileVersion>${NEW_FILE_VERSION}</FileVersion>|g" "$CSPROJ"
+          sed -i "s|<InformationalVersion>[^<]*</InformationalVersion>|<InformationalVersion>${NEW_VERSION}</InformationalVersion>|g" "$CSPROJ"
+
+          # Update AssemblyVersion only if it already exists in the file
+          if grep -q '<AssemblyVersion>' "$CSPROJ"; then
+            sed -i "s|<AssemblyVersion>[^<]*</AssemblyVersion>|<AssemblyVersion>${NEW_FILE_VERSION}</AssemblyVersion>|g" "$CSPROJ"
+          fi
+
+          # Verify that the required tags were actually updated
+          for TAG in Version FileVersion InformationalVersion; do
+            if ! grep -q "<${TAG}>" "$CSPROJ"; then
+              echo "::error::Failed to find <${TAG}> in $CSPROJ after update"
+              exit 1
+            fi
+          done
+
+          echo "Updated $CSPROJ:"
+          grep -E '<(Version|FileVersion|AssemblyVersion|InformationalVersion)>' "$CSPROJ"
+
+      - name: Commit and push version bump
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add TempestData.csproj
+          if git diff --cached --quiet; then
+            echo "No file changes detected – version was already at ${{ steps.versioning.outputs.new_version }}"
+          else
+            git commit -m "chore: bump version to ${{ steps.versioning.outputs.new_version }}"
+            git push
+          fi
+
+      - name: Create git tag
+        shell: bash
+        run: |
+          TAG="v${{ steps.versioning.outputs.new_version }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "::warning::Tag $TAG already exists – skipping tag creation"
+          else
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi
