@@ -10,6 +10,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -23,6 +24,7 @@ namespace TempestData
     public partial class MainWindow : Window
     {
         private readonly TempestApiClient _apiClient;
+        private readonly GitHubReleaseChecker _releaseChecker;
         private readonly List<ObservationField> _fields = new();
         private const string AllFieldName = "__all__";
         private const string NoneFieldName = "__none__";
@@ -32,12 +34,14 @@ namespace TempestData
         private bool _isInitializing;
         private bool _isFieldSelectionUpdating;
         private bool _isBusy;
+        private bool _isCheckingUpdates;
         private ContextMenu? _exportContextMenu;
 
         public MainWindow()
         {
             InitializeComponent();
             _apiClient = new TempestApiClient(new HttpClient());
+            _releaseChecker = new GitHubReleaseChecker(new HttpClient());
             Loaded += MainWindow_Loaded;
             UpdateExportButtonState();
         }
@@ -588,7 +592,87 @@ namespace TempestData
 
         private void HelpAboutMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            MessageBox.Show(this, "Tempest Weather Station Viewer\n\nUse File > Exit to close the app.\nUse Station > Refresh Station to reload your station list.", "About", MessageBoxButton.OK, MessageBoxImage.Information);
+            var version = GetCurrentAppVersion();
+            MessageBox.Show(this, $"Tempest Weather Station Viewer\nVersion: {version}\n\nUse File > Exit to close the app.\nUse Station > Refresh Station to reload your station list.", "About", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        private async void CheckUpdatesMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (_isCheckingUpdates)
+            {
+                return;
+            }
+
+            _isCheckingUpdates = true;
+            try
+            {
+                SetStatus("Checking for updates...");
+                var currentVersion = GetCurrentAppVersion();
+                var result = await _releaseChecker.CheckForUpdatesAsync(currentVersion);
+
+                if (!result.IsSuccess)
+                {
+                    SetStatus("Update check failed.");
+                    MessageBox.Show(this, result.ErrorMessage ?? "Unable to check for updates right now.", "Check for Updates", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                if (result.IsPrerelease)
+                {
+                    SetStatus("Latest GitHub release is marked as prerelease and was ignored.");
+                    MessageBox.Show(this, "The latest GitHub release is marked as prerelease and was skipped.\n\nStable updates only are enabled.", "Check for Updates", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                if (!result.IsUpdateAvailable)
+                {
+                    SetStatus($"You are up to date (v{result.CurrentVersion}).");
+                    MessageBox.Show(this, $"You are up to date.\n\nInstalled version: v{result.CurrentVersion}\nLatest version: v{result.LatestVersion}", "Check for Updates", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                SetStatus($"Update available: v{result.LatestVersion}");
+                var message =
+                    $"A new version is available.\n\nInstalled version: v{result.CurrentVersion}\nLatest version: v{result.LatestVersion}\n\nOpen the release page to download it?";
+                var choice = MessageBox.Show(this, message, "Update Available", MessageBoxButton.YesNo, MessageBoxImage.Information);
+                if (choice == MessageBoxResult.Yes)
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = result.ReleaseUrl,
+                        UseShellExecute = true
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                SetStatus("Update check failed.");
+                MessageBox.Show(this, $"Unable to check for updates.\n\n{ex.Message}", "Check for Updates", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            finally
+            {
+                _isCheckingUpdates = false;
+            }
+        }
+
+        private static string GetCurrentAppVersion()
+        {
+            var assembly = typeof(MainWindow).Assembly;
+            var informational = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+            if (!string.IsNullOrWhiteSpace(informational))
+            {
+                var plusIndex = informational.IndexOf('+');
+                return plusIndex > 0 ? informational[..plusIndex] : informational;
+            }
+
+            var version = assembly.GetName().Version;
+            if (version == null)
+            {
+                return "unknown";
+            }
+
+            var build = version.Build >= 0 ? version.Build : 0;
+            return $"{version.Major}.{version.Minor}.{build}";
         }
 
         private async Task LoadStationsAsync()

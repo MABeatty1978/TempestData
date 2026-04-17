@@ -12,6 +12,7 @@
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="API Token Help" Click="ApiKeyHelpMenuItem_Click" />
+                <MenuItem Header="Check for _Updates" Click="CheckUpdatesMenuItem_Click" />
                 <MenuItem Header="About" Click="HelpAboutMenuItem_Click" />
             </MenuItem>
         </Menu>
