@@ -1,0 +1,36 @@
+## .NET build outputs
+bin/
+obj/
+
+## Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## NuGet
+*.nupkg
+*.snupkg
+packages/
+project.lock.json
+project.assets.json
+
+## Publish output
+publish/
+
+## Logs and temp files
+*.log
+error.log
+*.tmp
+*.temp
+
+## OS files
+.DS_Store
+Thumbs.db
+
+## Python virtual env (present in this repo but not needed)
+.venv/
+
+## User secrets / settings are stored in %LocalAppData% and never in the repo
+# (TempestSettings.json lives at %LOCALAPPDATA%\TempestData\TempestSettings.json)
