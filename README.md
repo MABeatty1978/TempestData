@@ -8,6 +8,12 @@ A Windows desktop application for viewing and exporting observation data from yo
 
 ---
 
+## Screenshot
+
+![TempestData app screenshot](docs/tempest-screenshot-redacted.png)
+
+---
+
 ## Features
 
 - **Live station discovery** — connects to the Tempest API and lists all stations
